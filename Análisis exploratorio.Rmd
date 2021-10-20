@@ -1,0 +1,402 @@
+---
+title: "Análisis exploratorio"
+author: ""
+date: "10/9/2021"
+output:
+  pdf_document:
+    keep_tex: yes
+---
+
+```{r}
+library(data.table)
+library(rgdal)
+library(tidyverse)
+library(dplyr)
+library(broom)
+library(ggplot2)
+library(viridis)
+library(stringi)
+```
+
+```{r}
+consumo.agua <- fread(input = '../Conjuntos de datos/consumo-agua.csv')
+
+scall <- fread(input = '../Conjuntos de datos/concentrado_adip_31julio.csv')
+
+alcaldias.cdmx <- readOGR(dsn = '../Conjuntos de datos/Alcaldías.shp')
+```
+
+```{r}
+alcaldias_tidy <- tidy(alcaldias.cdmx)
+```
+
+```{r}
+alcaldias.cdmx$id <- row.names(alcaldias.cdmx)
+alcaldias_tidy <- left_join(alcaldias_tidy, alcaldias.cdmx@data)
+```
+
+```{r}
+consumo.alc.bim <- matrix(data = NA,
+                          nrow = length(alcaldias.cdmx@data$NOMGEO), 
+                          ncol = 4)
+
+alc.b1 <- consumo.agua[consumo.agua$bimestre == 1, ] %>%
+  group_by(nomgeo) %>%
+  summarise(consumo_total = sum(consumo_total))
+alc.b2 <- consumo.agua[consumo.agua$bimestre == 2, ] %>%
+  group_by(nomgeo) %>%
+  summarise(consumo_total = sum(consumo_total))
+alc.b3 <- consumo.agua[consumo.agua$bimestre == 3, ] %>%
+  group_by(nomgeo) %>%
+  summarise(consumo_total = sum(consumo_total))
+
+consumo.alc.bim[, 1] <- alc.b1$nomgeo
+consumo.alc.bim[, 2] <- alc.b1$consumo_total
+consumo.alc.bim[, 3] <- alc.b2$consumo_total
+consumo.alc.bim[, 4] <- alc.b3$consumo_total
+
+consumo.alc.bim <- as.data.frame(x = consumo.alc.bim)
+colnames(consumo.alc.bim) <- c("NOMGEO", "Bimestre 1", "Bimestre 2", "Bimestre 3")
+
+consumo.alc.bim$`Bimestre 1` <- as.numeric(consumo.alc.bim$`Bimestre 1`)
+consumo.alc.bim$`Bimestre 2` <- as.numeric(consumo.alc.bim$`Bimestre 2`)
+consumo.alc.bim$`Bimestre 3` <- as.numeric(consumo.alc.bim$`Bimestre 3`)
+```
+
+```{r}
+alcaldias_tidy <- left_join(alcaldias_tidy, consumo.alc.bim)
+```
+
+```{r}
+alcaldiasLabel <- alcaldias_tidy %>%
+  group_by(NOMGEO) %>%
+  summarise(label_long = mean(range(long)), 
+            label_lat = mean(range(lat)), 
+            `Bimestre 1` = mean(`Bimestre 1`), 
+            `Bimestre 2` = mean(`Bimestre 2`), 
+            `Bimestre 3` = mean(`Bimestre 3`))
+alcaldiasLabel$NOMGEO <- c('AOB', 'AZC', 'BJU', 'COY', 'CUJ', 'CUH', 'GAM', 'IZC', 'IZP', 'MCO', 'MHI', 'MAL', 'TLH', 'TLP', 'VCA', 'XOC')
+alcaldiasLabel[1, 3] <- alcaldiasLabel[1, 3] + 3000
+alcaldiasLabel[5, 3] <- alcaldiasLabel[5, 3] + 2000
+alcaldiasLabel[7, 3] <- alcaldiasLabel[7, 3] - 2000
+```
+
+```{r}
+# Sources: 
+# https://www.r-graph-gallery.com/327-chloropleth-map-from-geojson-with-ggplot2.html
+# https://medium.com/@honggao/plot-polygons-with-ggplot2-b5a87e4fa602
+# https://www.marmoe.xyz/2018/09/04/shapefiles-in-r-with-ggplot2-rgdal/
+
+map1 <- ggplot(data = alcaldias_tidy, aes(x = long, y = lat, group = group, fill = `Bimestre 1`)) +
+  theme_void() +
+  geom_polygon() +
+  geom_path(color = "white", size = 0.2) +
+  scale_fill_gradientn(breaks = c(min(alcaldias_tidy$`Bimestre 1`), 
+                             (max(alcaldias_tidy$`Bimestre 1`) - min(alcaldias_tidy$`Bimestre 1`)) / 2, 
+                             max(alcaldias_tidy$`Bimestre 1`)), 
+                    labels = c("Bajo", "Medio", "Alto"), 
+                    colours = viridis(16),
+                    name = "Nivel de consumo") + 
+  coord_equal() +
+  theme(text = element_text(color = "#22211d"),
+        panel.background = element_rect(color="white"),
+        axis.title = element_blank(), axis.text = element_blank(),
+        plot.title = element_text(size = 17, hjust=0.3, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+        plot.subtitle = element_text(size= 17, hjust=-0.4, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+        plot.caption = element_text(size=12, hjust=0.33, color = "#4e4d47", margin = margin(b = 0.3, r=-99, unit = "cm"))) +
+  labs(title = "Consumo total de agua en la Ciudad de México en 2019", 
+       subtitle = "Bimestre 1",
+       caption = "Fuente: Elaboración propia con datos del Sistema de Aguas de la Ciudad de México")
+```
+
+```{r Consumo bim1, fig.width=7, fig.height=5}
+map1 + 
+  geom_text(data = alcaldiasLabel, mapping = aes(x = label_long, y = label_lat, label = NOMGEO, group = NA), 
+            cex = 3, col = "grey1")
+```
+
+```{r}
+map2 <- ggplot(data = alcaldias_tidy, aes(x = long, y = lat, group = group, fill = `Bimestre 2`)) +
+  theme_void() +
+  geom_polygon() +
+  geom_path(color = "white", size = 0.2) +
+  scale_fill_gradientn(breaks = c(min(alcaldias_tidy$`Bimestre 2`), 
+                             (max(alcaldias_tidy$`Bimestre 2`) - min(alcaldias_tidy$`Bimestre 2`)) / 2, 
+                             max(alcaldias_tidy$`Bimestre 2`)), 
+                    labels = c("Bajo", "Medio", "Alto"), 
+                    colours = viridis(16),
+                    name = "Nivel de consumo") + 
+  coord_equal() +
+  theme(text = element_text(color = "#22211d"),
+        panel.background = element_rect(color="white"),
+        axis.title = element_blank(), axis.text = element_blank(),
+        plot.title = element_text(size = 17, hjust=0.3, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+        plot.subtitle = element_text(size= 17, hjust=-0.4, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+        plot.caption = element_text(size=12, hjust=0.33, color = "#4e4d47", margin = margin(b = 0.3, r=-99, unit = "cm"))) +
+  labs(title = "Consumo total de agua en la Ciudad de México en 2019", 
+       subtitle = "Bimestre 2",
+        caption = "Fuente: Elaboración propia con datos del Sistema de Aguas de la Ciudad de México")
+```
+
+```{r Consumo bim2, fig.width=7, fig.height=5}
+map2 + 
+  geom_text(data = alcaldiasLabel, mapping = aes(x = label_long, y = label_lat, label = NOMGEO, group = NA), 
+            cex = 3, col = "grey1")
+```
+
+```{r}
+map3 <- ggplot(data = alcaldias_tidy, aes(x = long, y = lat, group = group, fill = `Bimestre 3`)) +
+  theme_void() +
+  geom_polygon() +
+  geom_path(color = "white", size = 0.2) +
+  scale_fill_gradientn(breaks = c(min(alcaldias_tidy$`Bimestre 3`), 
+                             (max(alcaldias_tidy$`Bimestre 3`) - min(alcaldias_tidy$`Bimestre 3`)) / 2, 
+                             max(alcaldias_tidy$`Bimestre 3`)), 
+                    labels = c("Bajo", "Medio", "Alto"), 
+                    colours = viridis(16),
+                    name = "Nivel de consumo") + 
+  coord_equal() +
+  theme(text = element_text(color = "#22211d"),
+        panel.background = element_rect(color="white"),
+        axis.title = element_blank(), axis.text = element_blank(),
+        plot.title = element_text(size = 17, hjust=0.3, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+        plot.subtitle = element_text(size= 17, hjust=-0.4, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+        plot.caption = element_text(size=12, hjust=0.33, color = "#4e4d47", margin = margin(b = 0.3, r=-99, unit = "cm"))) +
+  labs(title = "Consumo total de agua en la Ciudad de México en 2019", 
+       subtitle = "Bimestre 3",
+        caption = "Fuente: Elaboración propia con datos del Sistema de Aguas de la Ciudad de México")
+```
+
+```{r Consumo bim3, fig.width=7, fig.height=5}
+map3 + 
+  geom_text(data = alcaldiasLabel, mapping = aes(x = label_long, y = label_lat, label = NOMGEO, group = NA), 
+            cex = 3, col = "grey1")
+```
+
+```{r}
+alcaldias <- levels(as.factor(consumo.agua$alcaldia))
+
+consumo.agua.por.alcaldia.bim <- list(list(),
+                               list(),
+                               list())
+for(i in 1:length(alcaldias)){
+  for(j in 1:3){
+    consumo.agua.por.alcaldia.bim[[j]][[i]] <- consumo.agua[(consumo.agua$alcaldia == alcaldias[i]), ][consumo.agua[(consumo.agua$alcaldia == alcaldias[i]), ]$bimestre == j, ]
+  }
+}
+
+```
+
+```{r}
+resumen.consumo.total <- matrix(data = NA, nrow = length(alcaldias), ncol = 18)
+
+for(i in 1:length(alcaldias)){
+  for(j in 1:3){
+    resumen.consumo.total[i, 1 + 6 * (j - 1)] <- min(consumo.agua.por.alcaldia.bim[[j]][[i]]$consumo_total[consumo.agua.por.alcaldia.bim[[j]][[i]]$consumo_total != 0])
+    resumen.consumo.total[i, 2 + 6 * (j - 1)] <- max(consumo.agua.por.alcaldia.bim[[j]][[i]]$consumo_total)
+    resumen.consumo.total[i, 3 + 6 * (j - 1)] <- mean(consumo.agua.por.alcaldia.bim[[j]][[i]]$consumo_total)
+    resumen.consumo.total[i, 4 + 6 * (j - 1)] <- median(consumo.agua.por.alcaldia.bim[[j]][[i]]$consumo_total)
+    resumen.consumo.total[i, 5 + 6 * (j - 1)] <- sd(consumo.agua.por.alcaldia.bim[[j]][[i]]$consumo_total)
+    resumen.consumo.total[i, 6 + 6 * (j - 1)] <- sum(consumo.agua.por.alcaldia.bim[[j]][[i]]$consumo_total)
+  }
+}
+```
+
+```{r}
+res.consumo.total <- as.data.frame(cbind(rep(alcaldias, 3),
+                                         c(resumen.consumo.total[, 6],
+                                           resumen.consumo.total[, 12],
+                                           resumen.consumo.total[, 18] ),
+                                         c(rep("Bimestre 1", length(alcaldias)),
+                                           rep("Bimestre 2", length(alcaldias)),
+                                           rep("Bimestre 3", length(alcaldias)))))
+colnames(res.consumo.total) <- c("Alcaldía", "Consumo total", "Bimestre")
+
+res.consumo.total$`Consumo total` <- as.numeric(res.consumo.total$`Consumo total`)
+
+res.consumo.total$Alcaldía <- factor(res.consumo.total$Alcaldía, levels = sort(alcaldias, decreasing = TRUE))
+```
+
+```{r Consumo de agua CDMX, fig.height=7, fig.width=15}
+ggplot(data = res.consumo.total, aes(x = Alcaldía, y = `Consumo total`, fill = Bimestre)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  coord_flip() +
+  theme(axis.title = element_text(size = 15, face = "bold"), axis.text = element_text(size = 15), title = element_text(size = 17, face = "bold"), legend.text = element_text(size = 13)) +
+  ylab("Consumo total (en millones de litros)") +
+  xlab("Alcaldía") +
+  scale_y_continuous(breaks = c(0, 1000000, 2000000, 3000000, 4000000, 5000000, 6000000),
+    labels = c('0', '1', '2', '3', '4', '5', '6')) +
+  ggtitle("Consumo total de agua en la Ciudad de México durante los bimestres 1, 2 y 3 de 2019") +
+  labs(caption = "Fuente: Elaboración propia con datos del Sistema de Aguas de la Ciudad de México")
+```
+
+```{r}
+scall$Scall <- rep(1, nrow(scall))
+
+scall.alc <- matrix(data = NA,
+                    nrow = length(alcaldias.cdmx$NOMGEO),
+                    ncol = 2)
+
+scall.alc.summ <- scall %>%
+  group_by(Alcaldia) %>%
+  summarise(Instalados = sum(Scall))
+
+scall.alc[, 1] <- sort(alcaldias.cdmx$NOMGEO)
+scall.alc[, 2] <- rep(0, nrow(scall.alc))
+scall.alc <- as.data.frame(scall.alc)
+colnames(scall.alc) <- c("Alcaldía", "SCALL Instalados")
+scall.alc <- mutate_all(.tbl = scall.alc, .funs = toupper)
+scall.alc$Alcaldía <- stri_trans_general(scall.alc$Alcaldía, "Latin-ASCII")
+
+scall.alc.summ[5, 1] <- scall.alc[10, 1]
+
+scall.alc.summ2 <- data.frame(setdiff(scall.alc$Alcaldía, scall.alc.summ$Alcaldia), rep(0, length(setdiff(scall.alc$Alcaldía, scall.alc.summ$Alcaldia))))
+colnames(scall.alc.summ2) <- c("Alcaldia", "Instalados")
+
+scall.alc.summ.joint <- merge(scall.alc.summ, scall.alc.summ2, by = 'Alcaldia', all = TRUE)
+
+scall.alc$`SCALL Instalados` <- scall.alc.summ.joint$Instalados.x
+
+scall.alc[which(is.na(scall.alc$`SCALL Instalados`)), 2] <- 0
+scall.alc$Alcaldía <- consumo.alc.bim$NOMGEO
+colnames(scall.alc) <- c("NOMGEO", "Instalados")
+```
+
+```{r}
+Alcaldias_tidy <- tidy(alcaldias.cdmx)
+```
+
+```{r}
+Alcaldias_tidy <- left_join(Alcaldias_tidy, alcaldias.cdmx@data)
+```
+
+```{r}
+Alcaldias_tidy <- left_join(Alcaldias_tidy, scall.alc)
+```
+
+```{r}
+AlcaldiasLabel <- Alcaldias_tidy %>%
+  group_by(NOMGEO) %>%
+  summarise(label_long = mean(range(long)), 
+            label_lat = mean(range(lat)), 
+            Instalados = mean(Instalados))
+AlcaldiasLabel$NOMGEO <- c('AOB', 'AZC', 'BJU', 'COY', 'CUJ', 'CUH', 'GAM', 'IZC', 'IZP', 'MCO', 'MHI', 'MAL', 'TLH', 'TLP', 'VCA', 'XOC')
+AlcaldiasLabel[1, 3] <- AlcaldiasLabel[1, 3] + 3000
+AlcaldiasLabel[5, 3] <- AlcaldiasLabel[5, 3] + 2000
+AlcaldiasLabel[7, 3] <- AlcaldiasLabel[7, 3] - 2000
+```
+
+```{r}
+map4 <- ggplot(data = Alcaldias_tidy, aes(x = long, y = lat, group = group, fill = `Instalados`)) +
+  theme_void() +
+  geom_polygon() +
+  geom_path(color = "white", size = 0.2) +
+  scale_fill_gradientn(breaks = c(min(Alcaldias_tidy$Instalados), 
+                             (max(Alcaldias_tidy$Instalados) - min(Alcaldias_tidy$Instalados)) / 2, 
+                             max(Alcaldias_tidy$Instalados)), 
+                    labels = c("Bajo", "Medio", "Alto"), 
+                    colours = viridis(16),
+                    name = "Número de sistemas instalados") + 
+  coord_equal() +
+  theme(text = element_text(color = "#22211d"),
+        panel.background = element_rect(color="white"),
+        axis.title = element_blank(), axis.text = element_blank(),
+        plot.title = element_text(size = 17, hjust=0.2, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+        plot.subtitle = element_text(size= 17, hjust=-0.4, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+        plot.caption = element_text(size=12, hjust=0.23, color = "#4e4d47", margin = margin(b = 0.3, r=-99, unit = "cm"))) +
+  labs(title = "Sistemas de captación de agua de lluvia en la Ciudad de México",
+       subtitle = "Datos del  a ",
+       caption = "Fuente: Elaboración propia con datos del Sistema de Aguas de la Ciudad de México")
+```
+
+```{r SCALL instalados, fig.width=7, fig.height=5}
+map4 + 
+  geom_text(data = AlcaldiasLabel, mapping = aes(x = label_long, y = label_lat, label = NOMGEO, group = NA), 
+            cex = 3, col = "grey99")
+```
+
+```{r}
+scall.alc.resumen <- scall.alc
+scall.alc.resumen$NOMGEO <- alcaldias
+scall.alc.resumen$NOMGEO <- as.factor(scall.alc.resumen$NOMGEO)
+```
+
+```{r SCALL instalados gráfico barras, fig.height=7, fig.width=15}
+ggplot(data = scall.alc.resumen, aes(x = NOMGEO, y = Instalados)) +
+  geom_bar(stat = "identity", position = position_dodge(), fill = "royalblue") +
+  coord_flip() +
+  theme(axis.title = element_text(size = 15, face = "bold"), axis.text = element_text(size = 15), title = element_text(size = 17, face = "bold"), legend.text = element_text(size = 13)) +
+  ylab("Cantidad total de sistemas instalados (en miles de unidades)") +
+  xlab("Alcaldía") +
+  scale_x_discrete(limits = rev(unique(sort(scall.alc.resumen$NOMGEO)))) +
+  scale_y_continuous(breaks = c(0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000),
+                     labels = c('0', '1', '2', '3', '4', '5', '6', '7', '8')) +
+  ggtitle("Sistemas de captación de agua de lluvia instalados en la Ciudad de México") +
+  labs(caption = "Fuente: Elaboración propia con datos del Sistema de Aguas de la Ciudad de México")
+```
+
+```{r}
+consumo.alc <- matrix(data = NA,
+                          nrow = length(alcaldias.cdmx@data$NOMGEO), 
+                          ncol = 2)
+consumo.alc[, 1] <- alcaldias.cdmx@data$NOMGEO
+consumo.alc[, 2] <- apply(X = consumo.alc.bim[, c(2, 3, 4)], MARGIN = 1, FUN = sum)
+consumo.alc <- as.data.frame(consumo.alc)
+colnames(consumo.alc) <- c("NOMGEO", "Consumo total")
+consumo.alc$NOMGEO <- sort(consumo.alc$NOMGEO)
+consumo.alc$`Consumo total` <- as.numeric(consumo.alc$`Consumo total`)
+```
+
+```{r}
+alcaldias_tidy_consum_total <- tidy(alcaldias.cdmx)
+```
+
+```{r}
+alcaldias_tidy_consum_total <- left_join(alcaldias_tidy_consum_total, alcaldias.cdmx@data)
+```
+
+```{r}
+alcaldias_tidy_consum_total <- left_join(alcaldias_tidy_consum_total, consumo.alc)
+```
+
+```{r}
+alcaldiasLabel_consum_total <- alcaldias_tidy_consum_total %>%
+  group_by(NOMGEO) %>%
+  summarise(label_long = mean(range(long)), 
+            label_lat = mean(range(lat)), 
+            `Consumo total` = mean(`Consumo total`))
+alcaldiasLabel_consum_total$NOMGEO <- c('AOB', 'AZC', 'BJU', 'COY', 'CUJ', 'CUH', 'GAM', 'IZC', 'IZP', 'MCO', 'MHI', 'MAL', 'TLH', 'TLP', 'VCA', 'XOC')
+alcaldiasLabel_consum_total[1, 3] <- alcaldiasLabel_consum_total[1, 3] + 3000
+alcaldiasLabel_consum_total[5, 3] <- alcaldiasLabel_consum_total[5, 3] + 2000
+alcaldiasLabel_consum_total[7, 3] <- alcaldiasLabel_consum_total[7, 3] - 2000
+```
+
+```{r, eval=FALSE}
+map5 <- ggplot(data = alcaldias_tidy_consum_total, aes(x = long, y = lat, group = group, fill = `Consumo total`)) +
+  theme_void() +
+  geom_polygon() +
+  geom_path(color = "white", size = 0.2) +
+  scale_fill_gradientn(breaks = c(min(alcaldias_tidy_consum_total$`Consumo total`), 
+                             (max(alcaldias_tidy_consum_total$`Consumo total`) - min(alcaldias_tidy_consum_total$`Consumo total`)) / 2, 
+                             max(alcaldias_tidy_consum_total$`Consumo total`)), 
+                    labels = c("Bajo", "Medio", "Alto"), 
+                    colours = viridis(16),
+                    name = "Nivel de consumo") + 
+  coord_equal() +
+  theme(text = element_text(color = "#22211d"),
+        panel.background = element_rect(color="white"),
+        axis.title = element_blank(), axis.text = element_blank(),
+        plot.title = element_text(size = 17, hjust=0.25, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+        plot.subtitle = element_text(size= 17, hjust=-0.4, color = "#4e4d47", margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")),
+        plot.caption = element_text(size=12, hjust=0.23, color = "#4e4d47", margin = margin(b = 0.3, r=-99, unit = "cm"))) +
+  labs(title = "Consumo de agua y sistemas de captación de agua de lluvia\nen la Ciudad de México",
+       #subtitle = "Datos del  a ",
+       caption = "Fuente: Elaboración propia con datos del Sistema de Aguas de la Ciudad de México") +
+  geom_point(data = scall, x = X, y = Y)
+```
+
+```{r Consumo de agua y SCALL, fig.width=7, fig.height=5, eval=FALSE}
+map5 + 
+  geom_text(data = alcaldiasLabel_consum_total, mapping = aes(x = label_long, y = label_lat, label = NOMGEO, group = NA), 
+            cex = 3, col = "grey1")
+```
