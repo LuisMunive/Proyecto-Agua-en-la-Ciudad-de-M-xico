@@ -1,0 +1,72 @@
+---
+title: "Preprocesamiento coordenadas SCALL"
+output: pdf_document
+---
+
+```{r}
+library(data.table)
+library(sp)
+library(rgdal)
+```
+
+```{r}
+datos <- fread(input = '../Conjuntos de datos/concentrado_adip_31julio.csv')
+```
+
+```{r}
+ind.x.null <- which(datos$X == 0)
+ind.y.null <- which(datos$Y == 0)
+ind.null <- c(ind.x.null, ind.y.null)
+ind.nonull <- setdiff(x = 1:nrow(datos), y = ind.null)
+```
+
+```{r}
+datos.nonull <- datos[ind.nonull, ]
+```
+
+```{r}
+ind.x.utm <- which(datos.nonull$X > 0)
+ind.y.utm <- which(datos.nonull$Y > 20 | datos.nonull$Y < 19)
+
+ind.x.geo <- setdiff(x = 1:nrow(datos.nonull), y = ind.x.utm)
+ind.y.geo <- setdiff(x = 1:nrow(datos.nonull), y = ind.y.utm)
+```
+
+```{r}
+setdiff(x = ind.x.utm, y = ind.y.utm)
+setdiff(x = ind.x.geo, y = ind.y.geo)
+```
+
+```{r}
+coords.utm <- datos.nonull[ind.x.utm, c(2, 3)]
+coords.geo <- datos.nonull[ind.x.geo, c(2, 3)]
+coords.geo <- coords.geo[-13298, ]
+```
+
+```{r}
+coordinates(coords.utm) <- c("X", "Y")
+proj4string(coords.utm) <- CRS(projargs = "+proj=utm +zone=14 ellps=WGS84")
+
+coords.utm.to.geo <- spTransform(x = coords.utm, CRSobj = CRS("+proj=longlat +datum=WGS84"))
+```
+
+```{r}
+coords.utm.to.geo.data <- coords.utm.to.geo@coords
+coords.geo.full <- rbind(coords.geo, coords.utm.to.geo.data)
+```
+
+```{r}
+nrow(coords.geo.full)
+```
+
+```{r}
+coords.df <- structure(list(longitud = coords.geo.full$X, latitud = coords.geo.full$Y), .Names = c("longitud", 
+"latitud"), class = "data.frame", row.names = c(NA, -25317L))
+
+xy <- coords.df[ ,c(1, 2)]
+
+coords.spdf <- SpatialPointsDataFrame(coords = xy, data = coords.df, coords.nrs = , proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+
+writeOGR(obj = coords.spdf, dsn = 'coords-scall.shp', layer = coords.df, driver = 'ESRI Shapefile')
+```
+

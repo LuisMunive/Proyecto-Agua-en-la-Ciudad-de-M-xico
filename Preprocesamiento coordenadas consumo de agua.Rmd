@@ -1,0 +1,51 @@
+---
+title: "Proyección a coordenadas planas"
+output: pdf_document
+---
+
+```{r}
+library(data.table)
+library(stringr)
+library(sp)
+library(rgdal)
+```
+
+```{r}
+datos <- fread(input = '../Conjuntos de datos/consumo-agua.csv')
+```
+
+```{r}
+coords <- str_split_fixed(string = datos$geo_point_2d, pattern = ',', n = 2)
+colnames(coords) <- c('Latitud', 'Longitud')
+coords <- as.data.frame(coords)
+coords$Latitud <- as.numeric(coords$Latitud)
+coords$Longitud <- as.numeric(coords$Longitud)
+```
+
+```{r}
+coords.df <- structure(list(longitud = coords$Longitud, latitud = coords$Latitud), .Names = c("longitud", 
+"latitud"), class = "data.frame", row.names = c(NA, -71102L))
+
+xy <- coords.df[ ,c(1, 2)]
+
+coords.spdf <- SpatialPointsDataFrame(coords = xy, data = coords.df, coords.nrs = , proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+
+writeOGR(obj = coords.spdf, dsn = 'coords-consumo.shp', layer = coords, driver = 'ESRI Shapefile')
+# Reference: https://stackoverflow.com/questions/29736577/how-to-convert-data-frame-to-spatial-coordinates
+```
+
+```{r}
+coordinates(coords) <- c("Longitud", "Latitud")
+proj4string(coords) <- CRS(projargs = "+proj=longlat +datum=WGS84")
+coords.utm <- spTransform(x = coords, CRSobj = CRS("+proj=utm +zone=14 ellps=WGS84"))
+```
+
+```{r}
+datos.utm <- data.frame(cbind(coords.utm@coords[, 1], coords.utm@coords[, 2], datos$consumo_total))
+colnames(datos.utm) <- c("x", "y", "consumo_total")
+```
+
+```{r}
+write.csv(datos.utm, 'consumo-agua-utm.csv', row.names = FALSE)
+```
+

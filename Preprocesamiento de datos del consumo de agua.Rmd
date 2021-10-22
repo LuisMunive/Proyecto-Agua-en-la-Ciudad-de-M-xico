@@ -1,0 +1,50 @@
+---
+title: "Preprocesamiento de datos del consumo de agua"
+author: ""
+date: "10/9/2021"
+output:
+  pdf_document:
+    keep_tex: yes
+---
+
+```{r}
+library(data.table)
+library(dplyr)
+```
+
+```{r}
+consumo.agua <- fread(input = '../Conjuntos de datos/consumo-agua.csv')
+
+idh <- read.csv('IDH.csv', header = TRUE)
+```
+
+```{r}
+idh <- idh[order(idh$Alcaldía),]
+```
+
+```{r}
+datos <- consumo.agua[, c(9, 10, 12, 15, 18)]
+
+colonias <- levels(as.factor(datos$colonia))
+
+datos <- datos %>%
+  group_by(colonia, alcaldia, bimestre) %>%
+  summarise(consumo_total = sum(consumo_total))
+
+datos <- datos[order(datos$alcaldia), ]
+```
+
+```{r}
+counts.alc <- datos %>%
+  group_by(alcaldia) %>%
+  tally()
+```
+
+```{r}
+datos$idh <- rep(x = idh$IDH, times = counts.alc$n)
+```
+
+```{r}
+write.csv(x = datos, file = 'datos.csv', row.names = FALSE)
+```
+
